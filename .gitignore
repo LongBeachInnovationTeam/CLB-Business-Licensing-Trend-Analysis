@@ -1,0 +1,31 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+
+# Example code in package build process
+*-Ex.R
+
+# RStudio files
+*.Rproj
+.Rproj.user/
+
+# produced vignettes
+vignettes/*.html
+vignettes/*.pdf
+
+# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
+.httr-oauth
+.Rproj.user
+
+# exclude data not available for public publishing yet from source control by default
+./data/raw/
+data/raw/
+./data/interim/
+data/interim/
+*.env
+
+# other crap
+.DS_Store

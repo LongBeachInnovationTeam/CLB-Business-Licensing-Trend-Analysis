@@ -1,0 +1,169 @@
+---
+title: "CLB Business Licensing Trends Analysis"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+## Prerequisites 
+
+Make sure you have [tidyverse](http://tidyverse.org/), [lubridate](https://github.com/hadley/lubridate), and [prophet](https://facebookincubator.github.io/prophet/) libraries installed in your R enviornment before we begin.
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(prophet)
+```
+
+I also import some commonly used functions and code for analyses.
+
+```{r}
+source("../R/utils.R")
+```
+
+# Analysis request from management
+
+> "Anything about seasonal [business licensing] fluctuation? For instance, the licenses in the latter half of the year generally take longer because there is a lot of construction going on."
+
+We will be importing the latest Business Licensing dataset available from City of Long Beach / Financial management and first analyze trends for Active licenses. This analysis will include all licensing activity (new, issued, renewed).
+
+Afterward, we will see if there is any time series trends for how many days it takes to issue a license to a new applicant. 
+
+## Import the business licensing dataset
+
+```{r}
+business_licenses <- read_csv("../data/raw/business_license.csv",
+                              col_types = cols(
+                                servicedate = col_date("%Y-%m-%d %H:%M:%S"),
+                                startdate = col_date("%Y-%m-%d %H:%M:%S"),
+                                milestonedate = col_date("%Y-%m-%d %H:%M:%S"),
+                                load_date = col_datetime(),
+                                bid_code = col_character(),
+                                licensecat = col_character(),
+                                zip = col_character()
+                              ))
+```
+
+## Data cleanup
+
+### Filtering out Inactive licenses
+
+As per Bretty Yakus, an **Active** business license is defined by Financial Management (FM) as business licenses that have a status of:
+
+  * Active
+  * CollcInBus
+  * Expired (a licensee might become reactivated or go into collections)
+  * Pending
+  * Conditionl
+
+Thereby, **Inactive** licenses are those that are not of the above statuses.
+
+Create a new dataframe for "Active" licenses.
+
+```{r}
+
+active_licstatus = c('Active', 'CollcInBus', 'Expired', 'Pending', 'Reactivate', 'Conditionl')
+active_milestones = c('Issued', 'Renewed', 'Collections', 'Pre-Collections', 'Pre-Renew', 'Renewed')
+
+active_licenses <- business_licenses %>%
+  filter(licstatus %in% active_licstatus & milestone %in% active_milestones)
+```
+
+### Get a daily count of Active/Issued licenses
+
+Clean up steps required to count our data: 
+
+1. In order to get a set of reliable data, we need to get a daily summary of Active/Issued business licenses. Note that we are filtering out all licenses before **August 2015**. This is due to the new version of the LMR/Hansen module foe business licenses going online August 2015. Prior to this system upgrade milestones weren't track electronically for applications - thus not having an electonic log to check when a license was first issued.
+2. We need to log-transforming our y variable in order to more clearly see increases in variation over time. This is especially important for exponentiall growing trends.
+3. Finally, we need rename our date/milestone date and count variable to **ds** and **y** respectively. The `prophet` library expects these named parameters to create our forecasting model.
+
+```{r}
+
+analysis_start_date <- as_date("2015-08-01")
+
+active_licenses_daily_count <- active_licenses %>%
+  mutate(ds = milestonedate) %>%
+  filter(ds >= analysis_start_date) %>%
+  group_by(ds) %>% 
+  summarise(
+    y = log(n())
+  ) %>% 
+  select(ds, y)
+```
+
+We are using the **milestonedate** in our analysis. The milestone date is used by Hansen as the log date/time stamp to capture capture events for a business licensee.
+
+## Forecasting
+
+### Create the model
+
+We fit the model by passing in the historical dataframe and instantiating a new `Prophet` object.
+
+```{r}
+m <- prophet(active_licenses_daily_count)
+```
+
+### Predicting growth
+
+Predictions are then made on a dataframe with a column named `ds` containing the dates for which predictions are to be made. The `make_future_dataframe` function takes the model object and a number of periods to forecast and produces a suitable dataframe. By default it will also include the historical dates so we can evaluate in-sample fit.
+
+We will now make predictions with the model for the next 12 months. We are passing in the montly freuency paramater to account for non-daily data as business licenses aren't processed daily. By sticking to monthly forecasts, we can reduce some of the noise in our data. 
+
+```{r}
+future <- make_future_dataframe(m, periods = 12, freq = 'm')
+forecast <- predict(m, future)
+```
+
+The forecast can be visualized using the `plot` function.
+
+```{r}
+plot_forecast(m,
+              forecast,
+              xlabel = 'Year',
+              ylabel = "Log Count")
+ggsave("../figs/business_licensing_forecast.png")
+```
+
+
+We can use the `prophet_plot_components` function to see the forecast components. By default you'll see the trend, yearly, seasonality, and weekly seasonality of the time series.
+
+```{r}
+prophet_plot_components(m, forecast)
+```
+
+#### Trend forecast component
+
+```{r}
+prophet_plot_trend_component(m, forecast, xlabel = 'Year', ylabel = 'Trend')
+ggsave("../figs/business_licensing_forecast_trend_component.png")
+```
+
+#### Yearly forecast component
+
+```{r}
+prophet_plot_yearly_component(m, forecast, xlabel = 'Day of year', ylabel = 'Log Count')
+ggsave("../figs/business_licensing_forecast_year_component.png")
+```
+
+## Export data
+
+Export our processed dataframes for archival and sharing purposes.
+
+```{r}
+write_csv(active_licenses, "../data/interim/active_business_licenses.csv")
+write_csv(active_licenses_daily_count, "../data/processed/active_business_licenses_count.csv")
+write_csv(forecast, "../data/processed/business_licensing_forecast.csv")
+```
+
+# How about Days to Issue?
+
+## Data import
+
+```{r}
+
+```
+
+
+## Data cleanup
+
+
