@@ -32,7 +32,7 @@
 - Run `mkdir data/raw/` to create a directory for our source datasets.
 - Import the latest business licensing datasets as detailed in the [source datasets section](#source-datasets) into `/data/raw/`.
 - Run `mkdir data/interim/` to store intermediate datasets for consumption by other code, notebooks, or analysis tools in your stack.
-- Open the [R Notebook](http://rmarkdown.rstudio.com/r_notebooks.html) from `src/analysis.Rmd in [RStudio](https://www.rstudio.com/) to run the analysis.
+- Open the [R Notebook](http://rmarkdown.rstudio.com/r_notebooks.html) from `src/analysis.Rmd` in [RStudio](https://www.rstudio.com/) to run the analysis.
 
 ## Source Datasets
 
