@@ -105,7 +105,7 @@ We fit the model by passing in the historical dataframe and instantiating a new 
 m <- prophet(daily_count)
 ```
 
-### Predicting growth
+### Predicting activity
 
 Predictions are then made on a dataframe with a column named `ds` containing the dates for which predictions are to be made. The `make_future_dataframe` function takes the model object and a number of periods to forecast and produces a suitable dataframe. By default it will also include the historical dates so we can evaluate in-sample fit.
 
@@ -197,6 +197,10 @@ active_license_milestones_intake <- active_license_milestones %>%
 active_license_milestones_issued <- active_license_milestones %>% 
   filter(code == "Issued")
 
+# Get a dataframe of license-milestones which only have an "Renewed" milestone
+active_license_milestones_renewed <- active_license_milestones %>% 
+  filter(code == "Renewed")
+
 # Get the earliest intake statusdttm (process date) for each license
 statusdttm_intake <- aggregate(
   active_license_milestones_intake$"statusdttm",
@@ -211,11 +215,19 @@ statusdttm_issued <- aggregate(
   min
 )
 
+# Get the earliest renewed statusdttm (process date) for each license
+statusdttm_renewed <- aggregate(
+  active_license_milestones_renewed$"statusdttm",
+  by = list(active_license_milestones_renewed$"licenseno"),
+  min
+)
+
 active_licenses <- active_licenses %>% 
   merge(statusdttm_intake, by.x = 1, by.y = 1, all.x = TRUE) %>%
   merge(statusdttm_issued, by.x = 1, by.y = 1, all.x = TRUE) %>%
-  mutate(days_to_issue = as.integer(round(difftime(x.y, x.x, units = "days")))) %>%
-  rename(intake_date = x.x, issue_date = x.y)
+  merge(statusdttm_renewed, by.x = 1, by.y = 1, all.x = TRUE) %>%
+  mutate(days_to_issue = as.integer(round(difftime(x.y, x.x, units = "days")))) %>% 
+  rename(date_intake = x.x, date_issued = x.y, date_renewed = x)
 
 ```
 
@@ -251,9 +263,40 @@ active_licenses %>%
 
 ## Modeling
 
+### Days to Issue
+
+```{r}
+x <- active_licenses %>%
+  mutate(ds = as_date(date_issued)) %>%
+  filter(ds >= analysis_date_start & ds <= analysis_date_end & !is.na(days_to_issue)) %>%
+  group_by(ds) %>%
+  summarise(y = mean(days_to_issue)) %>% 
+  select(ds, y)
+```
+
+```{r}
+m <- prophet(x)
+future <- make_future_dataframe(m, periods = 365)
+forecast <- predict(m, future)
+```
+
+```{r}
+plot_forecast(m,
+              forecast,
+              xlabel = 'Year',
+              ylabel = "Days to Issue")
+```
+
+```{r}
+prophet_plot_components(m, forecast)
+```
+
+
+### Issued licenses
+
 ```{r}
 daily_count <- active_licenses %>%
-  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_licenses$issue_date)
+  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_licenses$date_renewed)
 ```
 
 ```{r}
@@ -273,4 +316,7 @@ plot_forecast(m,
 ```{r}
 prophet_plot_components(m, forecast)
 ```
+
+### Renewed licenses
+
 
