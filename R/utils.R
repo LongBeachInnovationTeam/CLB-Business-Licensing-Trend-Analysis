@@ -146,3 +146,16 @@ prophet_plot_yearly_component <- function(m, fcst, uncertainty = TRUE, xlabel = 
     return (gg.yearly)
   }
 }
+
+df_daily_count <- function(df, start_date, end_date, target_date) {
+  return (
+    df %>%
+      mutate(ds = as_date(target_date)) %>%
+      filter(ds >= start_date & ds <= end_date) %>%
+      group_by(ds) %>% 
+      summarise(
+        y = log(n())
+      ) %>% 
+      select(ds, y)
+  )
+}

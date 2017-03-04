@@ -70,27 +70,27 @@ active_licenses <- business_licenses %>%
   filter(licstatus %in% active_licstatus & milestone %in% active_milestones)
 ```
 
-### Get a daily count of Active/Issued licenses
+### Analysis date range
 
-Clean up steps required to count our data: 
-
-1. In order to get a set of reliable data, we need to get a daily summary of Active/Issued business licenses. Note that we are filtering out all licenses before **August 2015**. This is due to the new version of the LMR/Hansen module foe business licenses going online August 2015. Prior to this system upgrade milestones weren't track electronically for applications - thus not having an electonic log to check when a license was first issued.
-2. We need to log-transforming our y variable in order to more clearly see increases in variation over time. This is especially important for exponentiall growing trends.
-3. Finally, we need rename our date/milestone date and count variable to **ds** and **y** respectively. The `prophet` library expects these named parameters to create our forecasting model.
+In order to get a set of reliable data, we need to get a daily summary of Active/Issued business licenses. Note that we are filtering out all licenses before **August 2015**. This is due to the new version of the LMR/Hansen module foe business licenses going online August 2015. Prior to this system upgrade milestones weren't track electronically for applications - thus not having an electonic log to check when a license was first issued.
 
 ```{r}
+analysis_date_start <- as_date("2015-08-01")
+analysis_date_end <- as_date("2017-02-28") # last previous full month
+```
 
-analysis_start_date <- as_date("2015-08-01")
-analysis_end_date <- as_date("2017-02-28") # last previous full month
+### Get a daily count of Active/Issued licenses
 
-active_licenses_daily_count <- active_licenses %>%
-  mutate(ds = milestonedate) %>%
-  filter(ds >= analysis_start_date & ds <= analysis_end_date) %>%
-  group_by(ds) %>% 
-  summarise(
-    y = log(n())
-  ) %>% 
-  select(ds, y)
+Clean up steps executed to count our data: 
+
+1. Filters milesonedate to be in the range of our defined analysis date range.
+2. Summarises the dataframe by counting the number of observations (y) grouped by the desired date.
+3. Log-transforms the y variable for us to more clearly see increases in variation over time. This is especially important for exponentiall growing trends.
+3. Renames our date/milestone date and count variable to **ds** and **y** respectively. The `prophet` library expects these named parameters to create our forecasting model.
+
+```{r}
+daily_count <- active_licenses %>% 
+  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_licenses$milestonedate)
 ```
 
 We are using the **milestonedate** in our analysis. The milestone date is used by Hansen as the log date/time stamp to capture capture events for a business licensee.
@@ -102,7 +102,7 @@ We are using the **milestonedate** in our analysis. The milestone date is used b
 We fit the model by passing in the historical dataframe and instantiating a new `Prophet` object.
 
 ```{r}
-m <- prophet(active_licenses_daily_count)
+m <- prophet(daily_count)
 ```
 
 ### Predicting growth
@@ -153,17 +153,17 @@ Export our processed dataframes for archival and sharing purposes.
 
 ```{r}
 write_csv(active_licenses, "../data/interim/active_business_licenses.csv")
-write_csv(active_licenses_daily_count, "../data/processed/active_business_licenses_count.csv")
+write_csv(daily_count, "../data/processed/active_business_licenses_count.csv")
 write_csv(forecast, "../data/processed/business_licensing_forecast.csv")
 ```
 
-# How about Days to Issue?
+# Is there seasonality by the number of issued licenses?
 
-We can calculate how many days it takes to issue a license for an applicant by pulling in additional relational data. 
+So far we've explored time series seasonality for **ALL** business licensing activity. How about new/issued licenses? Renewed licenses?
 
 ## Data import
 
-Business licensing milestones are comprised of a “log” recording change of status for each business license or application by date/time and inspector.
+We can calculate how many days it takes to issue a license for an applicant by pulling in additional relational data.  Business licensing milestones are comprised of a “log” recording change of status for each business license or application by date/time and inspector.
 
 ```{r}
 milestones <- read_csv("../data/raw/milestones.csv",
@@ -177,7 +177,9 @@ milestones <- read_csv("../data/raw/milestones.csv",
                        ))
 ```
 
-## Data cleanup
+## Exploratory data analysis
+
+### Data cleanup
 
 We can calculate the number of days it took to issue a business by subtracting the difference between the intake date and the issued date. Unfortunately, this calculation only works if we have the intake date in our milestones. Meaning that we won't know the "days to issue" for business licenses that were in the system before **August 2015**. 
 
@@ -213,11 +215,9 @@ active_licenses <- active_licenses %>%
   merge(statusdttm_intake, by.x = 1, by.y = 1, all.x = TRUE) %>%
   merge(statusdttm_issued, by.x = 1, by.y = 1, all.x = TRUE) %>%
   mutate(days_to_issue = as.integer(round(difftime(x.y, x.x, units = "days")))) %>%
-  select(-x.x, -x.y) # remove intermediate columns used for calculation
+  rename(intake_date = x.x, issue_date = x.y)
 
 ```
-
-## More exploratory data analysis
 
 How many observations do we have a Days to Issue calculation for?
 
@@ -227,7 +227,7 @@ active_licenses %>%
   nrow()
 ```
 
-What is the Days to Issue distribution?
+What does the Days to Issue distribution look like?
 
 ```{r}
 active_licenses %>%
@@ -247,5 +247,30 @@ active_licenses %>%
             std_dev = round(sd(days_to_issue), 1),
             min = min(days_to_issue),
             max = max(days_to_issue))
+```
+
+## Modeling
+
+```{r}
+daily_count <- active_licenses %>%
+  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_licenses$issue_date)
+```
+
+```{r}
+m <- prophet(daily_count)
+future <- make_future_dataframe(m, periods = 365)
+forecast <- predict(m, future)
+```
+
+
+```{r}
+plot_forecast(m,
+              forecast,
+              xlabel = 'Year',
+              ylabel = "Log Count")
+```
+
+```{r}
+prophet_plot_components(m, forecast)
 ```
 
