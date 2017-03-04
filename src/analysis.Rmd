@@ -12,6 +12,7 @@ Make sure you have [tidyverse](http://tidyverse.org/), [lubridate](https://githu
 ```{r}
 library(tidyverse)
 library(lubridate)
+library(purrr)
 library(prophet)
 ```
 
@@ -32,7 +33,7 @@ Afterward, we will see if there is any time series trends for how many days it t
 ## Import the business licensing dataset
 
 ```{r}
-business_licenses <- read_csv("../data/raw/business_license.csv",
+business_licenses <- read_csv("../data/raw/business_licenses.csv",
                               col_types = cols(
                                 servicedate = col_date("%Y-%m-%d %H:%M:%S"),
                                 startdate = col_date("%Y-%m-%d %H:%M:%S"),
@@ -80,10 +81,11 @@ Clean up steps required to count our data:
 ```{r}
 
 analysis_start_date <- as_date("2015-08-01")
+analysis_end_date <- as_date("2017-02-28") # last previous full month
 
 active_licenses_daily_count <- active_licenses %>%
   mutate(ds = milestonedate) %>%
-  filter(ds >= analysis_start_date) %>%
+  filter(ds >= analysis_start_date & ds <= analysis_end_date) %>%
   group_by(ds) %>% 
   summarise(
     y = log(n())
@@ -107,10 +109,10 @@ m <- prophet(active_licenses_daily_count)
 
 Predictions are then made on a dataframe with a column named `ds` containing the dates for which predictions are to be made. The `make_future_dataframe` function takes the model object and a number of periods to forecast and produces a suitable dataframe. By default it will also include the historical dates so we can evaluate in-sample fit.
 
-We will now make predictions with the model for the next 12 months. We are passing in the montly freuency paramater to account for non-daily data as business licenses aren't processed daily. By sticking to monthly forecasts, we can reduce some of the noise in our data. 
+We will now make predictions with the model for the next year (or 365 periods).
 
 ```{r}
-future <- make_future_dataframe(m, periods = 12, freq = 'm')
+future <- make_future_dataframe(m, periods = 365)
 forecast <- predict(m, future)
 ```
 
@@ -157,13 +159,93 @@ write_csv(forecast, "../data/processed/business_licensing_forecast.csv")
 
 # How about Days to Issue?
 
+We can calculate how many days it takes to issue a license for an applicant by pulling in additional relational data. 
+
 ## Data import
 
+Business licensing milestones are comprised of a “log” recording change of status for each business license or application by date/time and inspector.
+
 ```{r}
-
+milestones <- read_csv("../data/raw/milestones.csv",
+                       col_types = cols(
+                         licenseno = col_character(),
+                         addby = col_character(),
+                         aplickey = col_character(),
+                         statusdttm = col_datetime("%Y-%m-%d %H:%M:%S"),
+                         code = col_character(),
+                         load_date = col_datetime("%Y-%m-%d %H:%M:%S")
+                       ))
 ```
-
 
 ## Data cleanup
 
+We can calculate the number of days it took to issue a business by subtracting the difference between the intake date and the issued date. Unfortunately, this calculation only works if we have the intake date in our milestones. Meaning that we won't know the "days to issue" for business licenses that were in the system before **August 2015**. 
+
+```{r}
+
+# Join the licenses dataframe with milesones
+active_license_milestones <- active_licenses %>%
+  left_join(milestones, by = c("licenseno"))
+
+# Get a dataframe of license-milestones only only have an "Intake" milestone
+active_license_milestones_intake <- active_license_milestones %>% 
+  filter(code == "Intake")
+
+# Get a dataframe of license-milestones which only have an "Issued" milestone
+active_license_milestones_issued <- active_license_milestones %>% 
+  filter(code == "Issued")
+
+# Get the earliest intake statusdttm (process date) for each license
+statusdttm_intake <- aggregate(
+  active_license_milestones_intake$"statusdttm",
+  by = list(active_license_milestones_intake$"licenseno"),
+  min
+)
+
+# Get the earliest issued statusdttm (process date) for each license
+statusdttm_issued <- aggregate(
+  active_license_milestones_issued$"statusdttm",
+  by = list(active_license_milestones_issued$"licenseno"),
+  min
+)
+
+active_licenses <- active_licenses %>% 
+  merge(statusdttm_intake, by.x = 1, by.y = 1, all.x = TRUE) %>%
+  merge(statusdttm_issued, by.x = 1, by.y = 1, all.x = TRUE) %>%
+  mutate(days_to_issue = as.integer(round(difftime(x.y, x.x, units = "days")))) %>%
+  select(-x.x, -x.y) # remove intermediate columns used for calculation
+
+```
+
+## More exploratory data analysis
+
+How many observations do we have a Days to Issue calculation for?
+
+```{r}
+active_licenses %>%
+  filter(!is.na(days_to_issue)) %>% 
+  nrow()
+```
+
+What is the Days to Issue distribution?
+
+```{r}
+active_licenses %>%
+  filter(!is.na(days_to_issue)) %>%
+  ggplot(aes(x = days_to_issue)) +
+  geom_histogram(bins = 30, aes(fill = ..count..))
+```
+
+What are the average and median days to issue?
+
+```{r}
+active_licenses %>% 
+  filter(!is.na(days_to_issue)) %>% 
+  summarise(count = n(),
+            mean = round(mean(days_to_issue), 1),
+            median = round(median(days_to_issue), 1),
+            std_dev = round(sd(days_to_issue), 1),
+            min = min(days_to_issue),
+            max = max(days_to_issue))
+```
 
