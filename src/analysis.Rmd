@@ -99,10 +99,10 @@ We are using the **milestonedate** in our analysis. The milestone date is used b
 
 ### Create the model
 
-We fit the model by passing in the historical dataframe and instantiating a new `Prophet` object.
+We fit the model by passing in the historical dataframe and instantiating a new `Prophet` object. I have decided to not fit weekly seasonality as there was a lot of noise in our forecasted data.
 
 ```{r}
-m <- prophet(daily_count)
+m <- prophet(daily_count, weekly.seasonality = FALSE)
 ```
 
 ### Predicting activity
@@ -123,7 +123,6 @@ plot_forecast(m,
               forecast,
               xlabel = 'Year',
               ylabel = "Log Count")
-ggsave("../figs/business_licensing_forecast.png")
 ```
 
 
@@ -133,31 +132,18 @@ We can use the `prophet_plot_components` function to see the forecast components
 prophet_plot_components(m, forecast)
 ```
 
-#### Trend forecast component
-
-```{r}
-prophet_plot_trend_component(m, forecast, xlabel = 'Year', ylabel = 'Trend')
-ggsave("../figs/business_licensing_forecast_trend_component.png")
-```
-
-#### Yearly forecast component
-
-```{r}
-prophet_plot_yearly_component(m, forecast, xlabel = 'Day of year', ylabel = 'Log Count')
-ggsave("../figs/business_licensing_forecast_year_component.png")
-```
+It appears that there is more overall licensing activity during the spring and summer months.
 
 ## Export data
 
 Export our processed dataframes for archival and sharing purposes.
 
 ```{r}
-write_csv(active_licenses, "../data/interim/active_business_licenses.csv")
-write_csv(daily_count, "../data/processed/active_business_licenses_count.csv")
-write_csv(forecast, "../data/processed/business_licensing_forecast.csv")
+write_csv(daily_count, "../data/processed/all_licenses_daily_count.csv")
+write_csv(forecast, "../data/processed/all_licenses_forecast.csv")
 ```
 
-# Is there seasonality by the number of issued licenses?
+# Seasonal trends by license milestone?
 
 So far we've explored time series seasonality for **ALL** business licensing activity. How about new/issued licenses? Renewed licenses?
 
@@ -184,7 +170,6 @@ milestones <- read_csv("../data/raw/milestones.csv",
 We can calculate the number of days it took to issue a business by subtracting the difference between the intake date and the issued date. Unfortunately, this calculation only works if we have the intake date in our milestones. Meaning that we won't know the "days to issue" for business licenses that were in the system before **August 2015**. 
 
 ```{r}
-
 # Join the licenses dataframe with milesones
 active_license_milestones <- active_licenses %>%
   left_join(milestones, by = c("licenseno"))
@@ -222,7 +207,7 @@ statusdttm_renewed <- aggregate(
   min
 )
 
-active_licenses <- active_licenses %>% 
+active_license_milestone_summary <- active_licenses %>% 
   merge(statusdttm_intake, by.x = 1, by.y = 1, all.x = TRUE) %>%
   merge(statusdttm_issued, by.x = 1, by.y = 1, all.x = TRUE) %>%
   merge(statusdttm_renewed, by.x = 1, by.y = 1, all.x = TRUE) %>%
@@ -231,10 +216,18 @@ active_licenses <- active_licenses %>%
 
 ```
 
-How many observations do we have a Days to Issue calculation for?
+Export interim data
 
 ```{r}
-active_licenses %>%
+write_csv(active_license_milestone_summary,
+          "../data/interim/active_business_licenses_milestone_summary.csv",
+          na = "")
+```
+
+How many observations do we have a "Days to Issue"" calculation for?
+
+```{r}
+active_license_milestone_summary %>%
   filter(!is.na(days_to_issue)) %>% 
   nrow()
 ```
@@ -242,7 +235,7 @@ active_licenses %>%
 What does the Days to Issue distribution look like?
 
 ```{r}
-active_licenses %>%
+active_license_milestone_summary %>%
   filter(!is.na(days_to_issue)) %>%
   ggplot(aes(x = days_to_issue)) +
   geom_histogram(bins = 30, aes(fill = ..count..))
@@ -251,7 +244,7 @@ active_licenses %>%
 What are the average and median days to issue?
 
 ```{r}
-active_licenses %>% 
+active_license_milestone_summary %>% 
   filter(!is.na(days_to_issue)) %>% 
   summarise(count = n(),
             mean = round(mean(days_to_issue), 1),
@@ -261,12 +254,36 @@ active_licenses %>%
             max = max(days_to_issue))
 ```
 
+How many "Intake", "Issued", and "Renewed" milestones do we have?
+
+
+Number of licenses entered into the system (intake)
+```{r}
+active_license_milestone_summary %>%
+  filter(!is.na(date_intake)) %>%
+  count()
+```
+
+Number of licenses issued
+```{r}
+active_license_milestone_summary %>%
+  filter(!is.na(date_issued)) %>% 
+  count()
+```
+
+Number of licenses renewed
+```{r}
+active_license_milestone_summary %>%
+  filter(!is.na(date_renewed)) %>% 
+  count()
+```
+
 ## Modeling
 
 ### Days to Issue
 
 ```{r}
-x <- active_licenses %>%
+daily_count <- active_license_milestone_summary %>%
   mutate(ds = as_date(date_issued)) %>%
   filter(ds >= analysis_date_start & ds <= analysis_date_end & !is.na(days_to_issue)) %>%
   group_by(ds) %>%
@@ -275,7 +292,7 @@ x <- active_licenses %>%
 ```
 
 ```{r}
-m <- prophet(x)
+m <- prophet(daily_count, weekly.seasonality = FALSE)
 future <- make_future_dataframe(m, periods = 365)
 forecast <- predict(m, future)
 ```
@@ -284,27 +301,39 @@ forecast <- predict(m, future)
 plot_forecast(m,
               forecast,
               xlabel = 'Year',
-              ylabel = "Days to Issue")
+              ylabel = "Average days to Issue")
 ```
 
 ```{r}
 prophet_plot_components(m, forecast)
 ```
 
-
-### Issued licenses
+#### Export
 
 ```{r}
-daily_count <- active_licenses %>%
-  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_licenses$date_renewed)
+write_csv(daily_count, "../data/processed/days_to_issue_daily_count.csv")
+write_csv(forecast, "../data/processed/days_to_issue_forecast.csv")
+```
+
+### Intake Licenses
+
+```{r}
+daily_count <- active_license_milestone_summary %>%
+  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_license_milestone_summary$date_intake)
 ```
 
 ```{r}
-m <- prophet(daily_count)
+m <- prophet(daily_count, weekly.seasonality = FALSE)
 future <- make_future_dataframe(m, periods = 365)
 forecast <- predict(m, future)
 ```
 
+Create a summary dataframe to compare 
+
+```{r}
+summary_df <- df_for_plotting(m, forecast) %>% 
+  mutate(license_subset = "Intake")
+```
 
 ```{r}
 plot_forecast(m,
@@ -317,6 +346,117 @@ plot_forecast(m,
 prophet_plot_components(m, forecast)
 ```
 
-### Renewed licenses
+#### Export
+
+```{r}
+write_csv(daily_count, "../data/processed/intake_daily_count.csv")
+write_csv(forecast, "../data/processed/intake_forecast.csv")
+```
+
+### Issued Licenses
+
+```{r}
+daily_count <- active_license_milestone_summary %>%
+  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_license_milestone_summary$date_issued)
+```
+
+```{r}
+m <- prophet(daily_count, weekly.seasonality = FALSE)
+future <- make_future_dataframe(m, periods = 365)
+forecast <- predict(m, future)
+```
+
+Append to summary dataframe.
+```{r}
+plotting_df <- df_for_plotting(m, forecast) %>% 
+  mutate(license_subset = "Issued")
+
+summary_df <- summary_df %>%
+  bind_rows(plotting_df)
+```
+
+```{r}
+plot_forecast(m,
+              forecast,
+              xlabel = 'Year',
+              ylabel = "Log Count")
+```
+
+```{r}
+prophet_plot_components(m, forecast)
+```
+
+#### Export
+
+```{r}
+write_csv(daily_count, "../data/processed/issued_daily_count.csv")
+write_csv(forecast, "../data/processed/issued_forecast.csv")
+```
+
+### Renewed Licenses
+
+```{r}
+daily_count <- active_license_milestone_summary %>%
+  df_daily_count(analysis_date_start, analysis_date_end, target_date = active_license_milestone_summary$date_renewed)
+```
+
+```{r}
+m <- prophet(daily_count, weekly.seasonality = FALSE)
+future <- make_future_dataframe(m, periods = 365)
+forecast <- predict(m, future)
+```
+
+Append to summary dataframe.
+```{r}
+plotting_df <- df_for_plotting(m, forecast) %>% 
+  mutate(license_subset = "Renewed")
+
+summary_df <- summary_df %>%
+  bind_rows(plotting_df)
+```
+
+```{r}
+plot_forecast(m,
+              forecast,
+              xlabel = 'Year',
+              ylabel = "Log Count")
+```
+
+```{r}
+prophet_plot_components(m, forecast)
+```
+
+#### Export
+
+```{r}
+write_csv(daily_count, "../data/processed/renewed_daily_count.csv")
+write_csv(forecast, "../data/processed/renewed_forecast.csv")
+```
+
+## Summary
+
+```{r}
+
+summary_df %>%
+  mutate(doy = strftime(ds, format = "2000-%m-%d")) %>%
+  filter(license_subset != "days_to_issue") %>%
+  group_by(doy, license_subset) %>%
+  slice(1) %>%
+  ungroup() %>%
+  mutate(doy = as_date(doy)) %>%
+  arrange(doy) %>% 
+  ggplot(aes(x = doy, y = yearly, color = license_subset)) +
+    geom_line(na.rm = TRUE) +
+    scale_x_date(date_breaks = "2 months", labels = scales::date_format('%B')) +
+    labs(
+      title = "Milestone Yearly Trend",
+      subtitle = "Business licensing activity peaks at the beginning of the year and during summer months.",
+      x = "",
+      y = "Log Count",
+      color = "Milestone")
+
+ggsave("../figs/yearly_trend_summary.png")
+
+```
 
 

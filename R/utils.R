@@ -34,7 +34,7 @@ df_for_plotting <- function(m, fcst) {
 #' m <- prophet(history)
 #' future <- make_future_dataframe(m, periods = 365)
 #' forecast <- predict(m, future)
-#' plot(m, forecast)
+#' plot_forecast(m, forecast)
 #' }
 #'
 #' @export
