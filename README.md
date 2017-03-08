@@ -44,6 +44,4 @@ Export the following CSV's from the `hansen_staging` postgres schema on `clbisan
 |---	                    |---	              |---	                                                                                                                    |
 | business_licenses.csv   | business_license  | Primary source of record containing information on all of the business licenses issued and administered by the City.    |
 | milestones.csv   	      | milestone         | A “log” recording change of status for each business license or application by date/time and inspector.                 |
-| permits.csv   	        | permit            | Fee descriptions, fee amounts paid or due for each business license. Includes business improvement district (BID) fees. |
-
 
