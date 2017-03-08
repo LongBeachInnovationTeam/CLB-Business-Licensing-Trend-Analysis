@@ -109,7 +109,7 @@ m <- prophet(daily_count, weekly.seasonality = FALSE)
 
 Predictions are then made on a dataframe with a column named `ds` containing the dates for which predictions are to be made. The `make_future_dataframe` function takes the model object and a number of periods to forecast and produces a suitable dataframe. By default it will also include the historical dates so we can evaluate in-sample fit.
 
-We will now make predictions with the model for the next year (or 365 periods).
+We will now make predictions with the model for the next year (or 365 periods) worth of all business licensing activity.
 
 ```{r}
 future <- make_future_dataframe(m, periods = 365)
@@ -124,7 +124,6 @@ plot_forecast(m,
               xlabel = 'Year',
               ylabel = "Log Count")
 ```
-
 
 We can use the `prophet_plot_components` function to see the forecast components. By default you'll see the trend, yearly, seasonality, and weekly seasonality of the time series.
 
@@ -235,10 +234,17 @@ active_license_milestone_summary %>%
 What does the Days to Issue distribution look like?
 
 ```{r}
+
 active_license_milestone_summary %>%
   filter(!is.na(days_to_issue)) %>%
-  ggplot(aes(x = days_to_issue)) +
-  geom_histogram(bins = 30, aes(fill = ..count..))
+  ggplot(aes(x = days_to_issue, y = (..count..) / sum(..count..))) +
+  geom_histogram(bins = 30, aes(fill = ..count..)) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "The majority of business licenses are issued within a day.",
+    x = "Days to Issue",
+    y = ""
+  )
 ```
 
 What are the average and median days to issue?
@@ -449,7 +455,7 @@ summary_df %>%
     geom_line(na.rm = TRUE) +
     scale_x_date(date_breaks = "2 months", labels = scales::date_format('%B')) +
     labs(
-      title = "Milestone Yearly Trend",
+      title = "Milestone Year-Over-Year Trend",
       subtitle = "Business licensing activity peaks at the beginning of the year and during summer months.",
       x = "",
       y = "Log Count",
