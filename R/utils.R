@@ -147,12 +147,17 @@ prophet_plot_yearly_component <- function(m, fcst, uncertainty = TRUE, xlabel = 
   }
 }
 
-df_daily_count <- function(df, start_date, end_date, target_date) {
+export_df_as_csv <- function(df, filename) {
+  write_csv(df, filename, na = "")
+}
+
+#' @importFrom dplyr "%>%"
+df_daily_count <- function(df, d) {
   return (
     df %>%
-      mutate(ds = as_date(target_date)) %>%
-      filter(ds >= start_date & ds <= end_date) %>%
-      group_by(ds) %>% 
+      mutate(ds = lubridate::as_date(d)) %>%
+      group_by(ds) %>%
+      filter(!is.na(ds)) %>%
       summarise(
         y = log(n())
       ) %>% 
