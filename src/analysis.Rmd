@@ -9,21 +9,7 @@ params:
   analysis_date_end: "2017-02-28"
 ---
 
-```{r setup, include=FALSE}
-library(tidyverse)
-library(lubridate)
-library(purrr)
-library(prophet)
-
-# Import some commonly used functions and code for analyses 
-source("../R/utils.R")
-
-# Set analysis start and end dates as defined in the notebook params
-analysis_date_start <- lubridate::as_date(params$analysis_date_start)
-analysis_date_end <- lubridate::as_date(params$analysis_date_end)
-```
-
-> "Anything about seasonal [business licensing] fluctuation? For instance, the licenses in the latter half of the year generally take longer because there is a lot of construction going on."
+> "Anything on seasonal [business licensing] fluctuation? For instance, the licenses in the latter half of the year generally take longer because there is a lot of construction going on."
 
 We will be importing the latest Business Licensing dataset available from City of Long Beach / Financial management and first analyze trends for Active licenses. This analysis will include all licensing activity (new, issued, renewed).
 
@@ -57,93 +43,33 @@ Furthermore, active licenses have one of the following milestones:
   * Pre-Renew
   * Renewed
 
-In order to help create a summary of license activity, we can calculate how many days it takes to issue a license for an applicant by pulling in additional relational data.  Business licensing milestones are comprised of a “log” recording change of status for each business license or application by date/time and inspector. The number of days it took to issue a business is calculated by subtracting the difference between the intake date and the issued date. Unfortunately, this calculation only works if we have the intake date in our milestones. Meaning that we won't know the "days to issue" for business licenses that were in the system before **August 2015**. 
+In order to help create a summary of license activity, we can calculate how many days it takes to issue a license for an applicant by pulling in additional relational data.  Business licensing milestones are comprised of a “log” recording change of status for each business license or application by date/time and inspector. The number of days it took to issue a business is calculated by subtracting the difference between the intake date and the issued date. Unfortunately, this calculation only works if we have the intake date in our milestones. Meaning that we won't know the "days to issue" for business licenses that were in the system before August 2015. 
 
-```{r}
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(purrr)
+library(prophet)
 
-active_licstatus = c('Active', 'CollcInBus', 'Expired', 'Pending', 'Reactivate', 'Conditionl')
-active_milestones = c('Issued', 'Renewed', 'Collections', 'Pre-Collections', 'Pre-Renew', 'Renewed')
+# Import some commonly used functions and code for analyses 
+source("../R/utils.R")
 
-business_licenses <- read_csv("../data/raw/business_licenses.csv",
-                              col_types = cols(
-                                servicedate = col_date("%Y-%m-%d %H:%M:%S"),
-                                startdate = col_date("%Y-%m-%d %H:%M:%S"),
-                                milestonedate = col_date("%Y-%m-%d %H:%M:%S"),
-                                load_date = col_datetime(),
-                                bid_code = col_character(),
-                                licensecat = col_character(),
-                                zip = col_character()
-                              )) %>%
-                      # Filter for observation date
-                      filter(milestonedate >= analysis_date_start & milestonedate <= analysis_date_end) %>% 
-                      # Filter for active licenses
-                      filter(licstatus %in% active_licstatus & milestone %in% active_milestones)
+# Set analysis start and end dates as defined in the notebook params
+analysis_date_start <- lubridate::as_date(params$analysis_date_start)
+analysis_date_end <- lubridate::as_date(params$analysis_date_end)
 
-milestones <- read_csv("../data/raw/milestones.csv",
-                       col_types = cols(
-                         licenseno = col_character(),
-                         addby = col_character(),
-                         aplickey = col_character(),
-                         statusdttm = col_datetime("%Y-%m-%d %H:%M:%S"),
-                         code = col_character(),
-                         load_date = col_datetime("%Y-%m-%d %H:%M:%S")
-                       ))
-
-# Join master license record with milestones
-active_license_milestones <- business_licenses %>%
-  left_join(milestones, by = c("licenseno"))
-
-# Get a dataframe of license-milestones only only have an "Intake" milestone
-active_license_milestones_intake <- active_license_milestones %>% 
-  filter(code == "Intake")
-
-# Get a dataframe of license-milestones which only have an "Issued" milestone
-active_license_milestones_issued <- active_license_milestones %>% 
-  filter(code == "Issued")
-
-# Get a dataframe of license-milestones which only have an "Renewed" milestone
-active_license_milestones_renewed <- active_license_milestones %>% 
-  filter(code == "Renewed")
-
-# Get the earliest intake statusdttm (process date) for each license
-statusdttm_intake <- aggregate(
-  active_license_milestones_intake$"statusdttm",
-  by = list(active_license_milestones_intake$"licenseno"),
-  min
-)
-
-# Get the earliest issued statusdttm (process date) for each license
-statusdttm_issued <- aggregate(
-  active_license_milestones_issued$"statusdttm",
-  by = list(active_license_milestones_issued$"licenseno"),
-  min
-)
-
-# Get the earliest renewed statusdttm (process date) for each license
-statusdttm_renewed <- aggregate(
-  active_license_milestones_renewed$"statusdttm",
-  by = list(active_license_milestones_renewed$"licenseno"),
-  min
-)
-
-active_license_milestone_summary <- business_licenses %>% 
-  merge(statusdttm_intake, by.x = 1, by.y = 1, all.x = TRUE) %>%
-  merge(statusdttm_issued, by.x = 1, by.y = 1, all.x = TRUE) %>%
-  merge(statusdttm_renewed, by.x = 1, by.y = 1, all.x = TRUE) %>%
-  mutate(days_to_issue = as.integer(round(difftime(x.y, x.x, units = "days")))) %>% 
-  rename(date_intake = x.x, date_issued = x.y, date_renewed = x)
-
+# Import filtered datasets
+source("../R/import_active_licenses.R")
 ```
 
-Export interim data
-
-```{r}
+```{r, include=FALSE}
+# Export interim data
 export_df_as_csv(active_license_milestone_summary, "../data/interim/active_business_licenses_milestone_summary.csv")
 ```
 
 ### Assumptions
 
-For the sake of this analysis and the need to get a high-level trend of licensing activity I decided not to exclude rentals or commercial licenses. Keep this in mind when comparing the number of active licenses from this analysis to other reports you may receive.
+For the sake of this analysis and the need to get a high-level trend of licensing activity I decided not to exclude rentals or commercial licenses. Keep this in mind when comparing the number of active licenses from this analysis to other reports relating to business licensing that you might come across.
 
 ## Exploratory Data Analysis
 
@@ -268,8 +194,6 @@ It appears that there is more overall licensing activity during the spring and s
 prophet_plot_components(m, forecast)
 ```
 
-## Export data
-
 ```{r, include=FALSE}
 # Export our processed dataframes for archival and sharing purposes.
 export_df_as_csv(daily_count, "../data/processed/all_licenses_daily_count.csv")
@@ -291,9 +215,7 @@ daily_count <- active_license_milestone_summary %>%
   group_by(ds) %>%
   summarise(y = mean(days_to_issue)) %>% 
   select(ds, y)
-```
 
-```{r}
 m <- prophet(daily_count, weekly.seasonality = FALSE)
 future <- make_future_dataframe(m, periods = 365)
 forecast <- predict(m, future)
@@ -451,8 +373,8 @@ export_df_as_csv(forecast, "../data/processed/renewed_forecast.csv")
 ## Summary
 
 Business licensing activity during the year peaks at the beginning of the year and during summer months. This finding is consistent with Brett's anecdote of his department being the busiest during the summer.
-The model produced a yearly seasonal trend containing all active business licenses recorded into Hansen since Summer 2015. Our sample set consisting of **2,866 intake, 3,687 issued, and 14,824 renewed licenses** was used to create
-the "Milestone Yearly Trend" chart below. Trend charts reflect year-over-year activity (measured by the natural log of the daily license count), i.e. events that took place during 2015-2017. Daily licensing count data was log-transformed to make it easier to compare license milestones over time.
+
+The model produced a yearly seasonal trend containing all active business licenses recorded into Hansen since Summer 2015. Our sample set consisting of **2,866 intake, 3,687 issued, and 14,824 renewed licenses** was used to create the "Milestone Yearly Trend" chart below. Trend charts reflect year-over-year activity (measured by the natural log of the daily license count), i.e. events that took place during 2015-2017. Daily licensing count data was log-transformed to make it easier to compare license milestones over time.
 
 ```{r, echo=FALSE}
 summary_df %>%
