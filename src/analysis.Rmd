@@ -73,42 +73,6 @@ For the sake of this analysis and the need to get a high-level trend of licensin
 
 ## Exploratory Data Analysis
 
-How many observations do we have a "Days to Issue" calculation for?
-
-```{r}
-active_license_milestone_summary %>%
-  filter(!is.na(days_to_issue)) %>% 
-  nrow()
-```
-
-How does the "Days to Issue"" distribution look like?
-
-```{r}
-active_license_milestone_summary %>%
-  filter(!is.na(days_to_issue)) %>%
-  ggplot(aes(x = days_to_issue, y = (..count..) / sum(..count..))) +
-  geom_histogram(bins = 30, aes(fill = ..count..)) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  labs(
-    title = "The majority of business licenses are issued within a day.",
-    x = "Days to Issue",
-    y = ""
-  )
-```
-
-What are the average and median days to issue?
-
-```{r}
-active_license_milestone_summary %>% 
-  filter(!is.na(days_to_issue)) %>% 
-  summarise(count = n(),
-            mean = round(mean(days_to_issue), 1),
-            median = round(median(days_to_issue), 1),
-            std_dev = round(sd(days_to_issue), 1),
-            min = min(days_to_issue),
-            max = max(days_to_issue))
-```
-
 How many "Intake", "Issued", and "Renewed" milestones do we have?
 
 Number of licenses entered into the system (intake)
@@ -132,11 +96,96 @@ active_license_milestone_summary %>%
   count()
 ```
 
+How many observations do we have a "Days to Issue" calculation for?
+
+```{r}
+active_license_milestone_summary %>%
+  filter(!is.na(days_to_issue)) %>% 
+  nrow()
+```
+
+### Outliers Analysis
+
+What are the average and median days to issue?
+
+```{r}
+active_license_milestone_summary %>% 
+  filter(!is.na(days_to_issue)) %>% 
+  summarise(count = n(),
+            mean = round(mean(days_to_issue), 1),
+            median = round(median(days_to_issue), 1),
+            std_dev = round(sd(days_to_issue), 1),
+            min = min(days_to_issue),
+            max = max(days_to_issue))
+```
+
+```{r}
+quantile(active_license_milestone_summary$days_to_issue, na.rm = TRUE)
+```
+
+Let's define our outliers as those whose "Days to Issue" metric are greater than the 3rd quantile.
+
+```{r}
+third_quantile <- quantile(active_license_milestone_summary$days_to_issue, probs = (0.75), na.rm = TRUE)
+outliers <- active_license_milestone_summary %>% 
+  filter(days_to_issue > third_quantile)
+```
+
+The majority of our outliers are involved in restaurant, food, and retail businesses.
+
+```{r}
+outliers %>%
+  group_by(liccatdesc) %>%
+  summarise(
+    count = n()
+  ) %>% 
+  arrange(desc(count))
+```
+
+Let's see what milestone states the longest Days to Issue applicant went through to get their first license.
+
+```{r}
+max_outlier <- outliers %>% 
+  filter(days_to_issue == max(days_to_issue)) %>% 
+  select(licenseno)
+
+# Get the license number
+max_outlier_licenseno <- max_outlier$licenseno[[1]]
+```
+
+```{r}
+outliers %>% 
+  filter(days_to_issue == max(days_to_issue)) %>% 
+  select(licenseno, dbaname, typeofbusiness, bid, homebased, classdesc, days_to_issue)
+```
+
+```{r}
+# Inspect milestones
+milestones %>% 
+  filter(licenseno == max_outlier_licenseno)
+```
+
+Unlike the barber shop owner, however, the majority of business licenses are issued within a day.
+
+```{r}
+active_license_milestone_summary %>%
+  filter(!is.na(days_to_issue)) %>%
+  ggplot(aes(x = days_to_issue, y = (..count..) / sum(..count..))) +
+  geom_histogram(bins = 30, aes(fill = ..count..)) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "The majority of business licenses are issued within a day.",
+    x = "Days to Issue",
+    y = ""
+  )
+```
+
 ### Takeaways
 
 * It takes 26.2 days on average to issue a license.
-* There is a standard deviation of 55.4 days (suggesting that there are a number of individuals who experience longer process times).
-* The longest processing time for a license was 482 days for a "Barber/Beauty Shop Owner". This individual was under "Departmental Reviews" between November 2015 and January 2016!
+* 50% of sampled business licensing applicants are issued a license within 1 day.
+* There is a standard deviation (or spread) of 55.4 days. Suggesting that there are a number of individuals who experience longer application processing times.
+* The longest processing time for a license was 482 days for a "Barber/Beauty Shop Owner". This individual was under "Departmental Reviews" between November 2015 and January 2016. Furthermore, this establishment was not part of a Business Improvement District.
 
 ### Forecasting Overall Licensing Activity
 
