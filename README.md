@@ -17,13 +17,13 @@
     │
     ├── doc                <- Contains any useful documentation, data dictionaries, screenshots, notes, etc.
     ├── figs               <- Contains generated figures.
+    ├── packrat            <- Packrat project files and libraries
     └── src                <- Source code or notebooks for use in this project.
     
 ## Required Dependencies
 
 - [R](https://www.r-project.org/)
-- [tidyverse](http://tidyverse.org/): a collection of R packages that makes data wrangling, munging, and analysis easier.
-- [prophet](https://github.com/facebookincubator/prophet): a procedure for forecasting time series data. It is based on an additive model where non-linear trends are fit with yearly and weekly seasonality, plus holidays. It works best with daily periodicity data with at least one year of historical data. Prophet is robust to missing data, shifts in the trend, and large outliers.
+- [Packrat](http://rstudio.github.io/packrat/):a dependency management system for R.
     
 ## Getting Started
 
@@ -32,6 +32,7 @@
 - Run `mkdir data/raw/` to create a directory for our source datasets.
 - Import the latest business licensing datasets as detailed in the [source datasets section](#source-datasets) into `/data/raw/`.
 - Run `mkdir data/interim/` to store intermediate datasets for consumption by other code, notebooks, or analysis tools in your stack.
+- 
 - Open the [R Notebook](http://rmarkdown.rstudio.com/r_notebooks.html) from `src/analysis.Rmd` in [RStudio](https://www.rstudio.com/) to run the analysis.
 
 ## Source Datasets
